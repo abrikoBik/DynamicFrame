@@ -1,0 +1,25 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <h2>Загрузка изображения</h2>
+    
+    <!-- Форма загрузки -->
+    <input type="file" id="fileInput" accept="image/jpeg,image/png,image/jpg">
+    <button onclick="uploadFile()">Загрузить</button>
+    
+    <div id="status"></div>
+    
+    <hr>
+    
+    <!-- Просмотр -->
+    <input type="file" id="picker" accept="image/jpeg,image/png" onchange="load()">
+    <img id="preview" alt="Превью">
+    
+    <script src="main.js"></script>
+</body>
+</html>
