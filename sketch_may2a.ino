@@ -15,6 +15,9 @@ const char* password = "251006428";
 AsyncWebServer server(80);
 File fsUploadFile;
 
+char uploaded_count = 0;
+String uploaded_images[13];
+
 // Вывод в TFT
 bool tft_output(int16_t x, int16_t y, uint16_t w, uint16_t h, uint16_t* bitmap) {
   if (y >= tft.height()) return 0;
@@ -67,7 +70,7 @@ void setupRoutes() {
     request->send(LittleFS, "/site/main.js", "application/javascript", false);
   });
 
-  server.on("/api/listFS", HTTP_POST, [](AsyncWebServerRequest *request){
+  server.on("/api/listFS", HTTP_GET, [](AsyncWebServerRequest *request){
     listDir(LittleFS, "/", 1);
     // TODO: this request should send file array to client
     request->send(200, "application/json", "{\"status\":1}");
@@ -89,10 +92,13 @@ void handleFileUpload(AsyncWebServerRequest *request, String filename, size_t in
     Serial.printf("UploadStart: %s\n", filename.c_str());
     
     // Удаляем файл если существует
-    LittleFS.remove(filename);
-    
-    // Открываем файл для записи
-    fsUploadFile = LittleFS.open(filename, FILE_WRITE);
+    if(!LittleFS.exists(filename)) {
+      // Открываем файл для записи
+      uploaded_images[uploaded_count++] = filename;
+      fsUploadFile = LittleFS.open(filename, FILE_WRITE);
+    } else {
+      Serial.printf("%s file already exists!\n", filename);
+    }
     
     if (!fsUploadFile) {
       Serial.println("Failed to open file for writing");
@@ -142,6 +148,7 @@ void listDir(fs::FS &fs, const char * dirname, uint8_t levels) {
           Serial.printf("\t%s\/\n", file.name());
           if (levels) {
               listDir(fs, file.path(), levels - 1);
+              Serial.printf("------------------------------");
           }
       } else {
           Serial.printf("\t%s - %d bytes\n",file.name(),file.size());
@@ -152,8 +159,16 @@ void listDir(fs::FS &fs, const char * dirname, uint8_t levels) {
 
 void loop() {
   static int lastShow = 0;
+  static int curImage = 0;
   if(millis() - lastShow >= 5000) {
     lastShow = millis();
-    showJpgFullscreen("/cool.jpg", LittleFS);
+    if(!uploaded_count) {
+      showJpgFullscreen("/cool.jpg", LittleFS);
+    } else {
+      if(curImage > uploaded_count) {
+        curImage = 0;
+      }
+      showJpgFullscreen(uploaded_images[curImage++].c_str(), LittleFS);
+    }
   }
 }
