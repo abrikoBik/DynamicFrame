@@ -9,41 +9,53 @@
 
 TFT_eSPI tft = TFT_eSPI(320, 240);
 
-const char* SSID = "824";
-const char* password = "251006428";
+const char* SSID = "DynamicFrame";
+const char* password = "11111111";
 
 AsyncWebServer server(80);
 File fsUploadFile;
 
-char uploaded_count = 0;
+uint8_t uploaded_count = 0;
 String uploaded_images[13];
 
-// Вывод в TFT
 bool tft_output(int16_t x, int16_t y, uint16_t w, uint16_t h, uint16_t* bitmap) {
   if (y >= tft.height()) return 0;
   tft.pushImage(x, y, w, h, bitmap);
   return 1;
 }
 
+void syncPhotos() {
+  File root = LittleFS.open("/images");
+
+  File photo = root.openNextFile();
+  while(photo) {
+    Serial.println(photo.name());
+    uploaded_images[uploaded_count++] = photo.path();
+    photo = root.openNextFile();
+  }
+}
+
 void setup() {
   Serial.begin(115200);
 
-  // Connect to Wi-Fi network
-  Serial.print("Connecting to ");
+  //--------------------------------------//
+  //             Access Point             //
+  //--------------------------------------//
   Serial.println(SSID);
-  WiFi.begin(SSID, password);
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
-  }
-  Serial.println("");
-  Serial.println("WiFi connected.");
-  Serial.println("IP address: ");
-  Serial.println(WiFi.localIP());
+  WiFi.softAP(SSID, password, 1, false, 4);
+  Serial.println(WiFi.softAPIP());
 
   if (!LittleFS.begin()) {
     Serial.println("LittleFS failed");
     while (1);
+  }
+
+  if(!LittleFS.exists("/images")) {
+    LittleFS.mkdir("/images");
+    Serial.println("Created dir /images!");
+  } else {
+    syncPhotos();
+    Serial.println("Photos synced!");
   }
 
   tft.init();
@@ -70,10 +82,56 @@ void setupRoutes() {
     request->send(LittleFS, "/site/main.js", "application/javascript", false);
   });
 
-  server.on("/api/listFS", HTTP_GET, [](AsyncWebServerRequest *request){
+  server.on("/cool.jpg", HTTP_GET, [](AsyncWebServerRequest *request){
+    request->send(LittleFS, "/cool.jpg", "image/jpeg", false);
+  });
+
+  server.on("/api/files", HTTP_GET, [](AsyncWebServerRequest *request){
     listDir(LittleFS, "/", 1);
-    // TODO: this request should send file array to client
-    request->send(200, "application/json", "{\"status\":1}");
+    
+    String res_arr = "{\"files\":[";
+    for(int i = 0; i < uploaded_count; i++) {
+      res_arr += "\"" + uploaded_images[i] + "\"";
+      if (i < uploaded_count - 1) {
+        res_arr += ",";
+      }
+    }
+    res_arr += "],\"uploaded_count\":" + String(uploaded_count) + "}";
+    
+    request->send(200, "application/json", res_arr);
+  });
+
+  server.on("/api/images", HTTP_GET, [](AsyncWebServerRequest *request){
+    if(request->hasParam("name")) {
+      String image_path = request->getParam("name")->value();
+      request->send(LittleFS, image_path, "image/jpeg", false);
+    } else {
+      request->send(400, "text/plain", "NO PARAM");
+    }
+  });
+
+  server.on("/api/files", HTTP_DELETE, [](AsyncWebServerRequest *request) {
+    if(request->hasParam("index")) {
+      int idx = request->getParam("index")->value().toInt();
+      
+      if(idx >= 0 && idx < uploaded_count) {
+        String fileToDelete = uploaded_images[idx];
+        Serial.printf("Deleting %s...\n", fileToDelete.c_str());
+        
+        LittleFS.remove(fileToDelete);
+        
+        for(int i = idx; i < uploaded_count - 1; i++) {
+          uploaded_images[i] = uploaded_images[i+1];
+        }
+        uploaded_count--;
+        
+        request->send(200, "text/plain", "OK");
+      } else {
+        request->send(400, "text/plain", "Invalid index");
+      }
+    } else {
+      request->send(400, "text/plain", "Missing index parameter");
+    }
   });
 
   server.on("/api/upload", HTTP_POST, [](AsyncWebServerRequest *request){
@@ -83,37 +141,42 @@ void setupRoutes() {
   });
 }
 
-
 void handleFileUpload(AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final) {
   if (!index) {
-    // Начало загрузки
-    if (!filename.startsWith("/")) filename = "/" + filename;
+    if (!filename.startsWith("/images/")) filename = "/images/" + filename;
     
     Serial.printf("UploadStart: %s\n", filename.c_str());
     
-    // Удаляем файл если существует
-    if(!LittleFS.exists(filename)) {
-      // Открываем файл для записи
-      uploaded_images[uploaded_count++] = filename;
-      fsUploadFile = LittleFS.open(filename, FILE_WRITE);
-    } else {
-      Serial.printf("%s file already exists!\n", filename);
+    if (uploaded_count >= 13) {
+      Serial.println("Max files limit (13) reached!");
+      return;
     }
-    
+
+    fsUploadFile = LittleFS.open(filename, FILE_WRITE);
     if (!fsUploadFile) {
       Serial.println("Failed to open file for writing");
       return;
     }
+
+    bool isNew = true;
+    for(int i = 0; i < uploaded_count; i++) {
+      if(uploaded_images[i] == filename) {
+        isNew = false;
+        break;
+      }
+    }
+    
+    if(isNew) {
+      uploaded_images[uploaded_count++] = filename;
+    }
   }
 
-  // Запись данных
-  if (len) {
+  if (len && fsUploadFile) {
     fsUploadFile.write(data, len);
   }
 
-  // Конец загрузки
   if (final) {
-    fsUploadFile.close();
+    if(fsUploadFile) fsUploadFile.close();
     Serial.printf("UploadEnd: %s, %u bytes\n", filename.c_str(), index + len);
   }
 }
@@ -133,14 +196,6 @@ void listDir(fs::FS &fs, const char * dirname, uint8_t levels) {
   Serial.printf("%s\r\n", dirname);
 
   File root = fs.open(dirname);
-  if (!root) {
-      Serial.println("- failed to open directory");
-      return;
-  }
-  if (!root.isDirectory()) {
-      Serial.println(" - not a directory");
-      return;
-  }
 
   File file = root.openNextFile();
   while (file) {
@@ -148,7 +203,7 @@ void listDir(fs::FS &fs, const char * dirname, uint8_t levels) {
           Serial.printf("\t%s\/\n", file.name());
           if (levels) {
               listDir(fs, file.path(), levels - 1);
-              Serial.printf("------------------------------");
+              Serial.println("------------------------------");
           }
       } else {
           Serial.printf("\t%s - %d bytes\n",file.name(),file.size());
@@ -160,15 +215,18 @@ void listDir(fs::FS &fs, const char * dirname, uint8_t levels) {
 void loop() {
   static int lastShow = 0;
   static int curImage = 0;
+  
   if(millis() - lastShow >= 5000) {
     lastShow = millis();
-    if(!uploaded_count) {
+    
+    if(uploaded_count == 0) {
       showJpgFullscreen("/cool.jpg", LittleFS);
     } else {
-      if(curImage > uploaded_count) {
+      if(curImage >= uploaded_count) {
         curImage = 0;
       }
-      showJpgFullscreen(uploaded_images[curImage++].c_str(), LittleFS);
+      showJpgFullscreen(uploaded_images[curImage].c_str(), LittleFS);
+      curImage++;
     }
   }
 }

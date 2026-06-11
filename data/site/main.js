@@ -18,9 +18,51 @@ function load(input_element) {
     img.src = URL.createObjectURL(file);
 }
 
+async function deleteFile(index) {
+    const responde = await fetch(`/api/files?index=${index}`, {
+        method: "DELETE"
+    });
+    listFS();
+}
+
 async function listFS () {
-    const response = await fetch("/api/listFS");
-    console.log(response);
+    const response = await fetch("/api/files");
+
+    if(!response.ok) {
+        console.error("HTTP error!");
+        return;
+    }
+
+    const fs_json = await response.json();
+    console.log(fs_json);
+
+    const files_section = document.getElementById("files");
+    files_section.replaceChildren();
+
+    if(fs_json.files.length > 0) {
+        fs_json.files.forEach((el, idx) => {
+            const file_line = document.createElement("div");
+            const delete_button = document.createElement("span");
+            const preview_img = document.createElement("img");
+
+            file_line.textContent = el;
+            file_line.id = "file_line";
+            files_section.appendChild(file_line);
+
+            delete_button.textContent = "x";
+            delete_button.id = "delete_button";
+            delete_button.onclick = () => deleteFile(idx);
+            file_line.appendChild(delete_button);
+
+            preview_img.src = `/api/images?name=${el}`;
+            preview_img.id = "file_prev";
+            file_line.appendChild(preview_img);
+        });
+    } else {
+        const file_line = document.createElement("div");
+        file_line.textContent = "No files";
+        files_section.appendChild(file_line);
+    }
 }
 
 async function uploadFile() {
