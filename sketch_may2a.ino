@@ -7,6 +7,7 @@
 #include "FS.h"
 #include "LittleFS.h"
 
+
 TFT_eSPI tft = TFT_eSPI(320, 240);
 
 const char* SSID = "DynamicFrame";
@@ -16,7 +17,9 @@ AsyncWebServer server(80);
 File fsUploadFile;
 
 uint8_t uploaded_count = 0;
-String uploaded_images[13];
+String uploaded_images[50];
+
+int photo_delay = 5000;
 
 bool tft_output(int16_t x, int16_t y, uint16_t w, uint16_t h, uint16_t* bitmap) {
   if (y >= tft.height()) return 0;
@@ -29,10 +32,11 @@ void syncPhotos() {
 
   File photo = root.openNextFile();
   while(photo) {
-    Serial.println(photo.name());
     uploaded_images[uploaded_count++] = photo.path();
     photo = root.openNextFile();
   }
+
+  root.close();
 }
 
 void setup() {
@@ -139,6 +143,26 @@ void setupRoutes() {
   }, [](AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final){
     handleFileUpload(request, filename, index, data, len, final);
   });
+
+  server.on("/api/space_used", HTTP_GET, [](AsyncWebServerRequest *request) {
+    Serial.printf("%d/%d Bytes/Bytes\n", LittleFS.usedBytes(), LittleFS.totalBytes());
+    request->send(200, "text/plain", String(LittleFS.usedBytes()));
+  });
+
+  server.on("/api/images/delay", HTTP_POST, [](AsyncWebServerRequest *request) {
+    if(!request->hasParam("delay", true)) {
+      request->send(400, "text/plain", "NO ARG");
+      return;
+    }
+
+    photo_delay = request->getParam("delay", true)->value().toInt();
+
+    request->send(200, "text/plain", "OK");
+  });
+
+  server.on("/api/cur_delay", HTTP_GET, [](AsyncWebServerRequest *request) {
+    request->send(200, "text/plain", String(photo_delay));
+  });
 }
 
 void handleFileUpload(AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final) {
@@ -147,8 +171,8 @@ void handleFileUpload(AsyncWebServerRequest *request, String filename, size_t in
     
     Serial.printf("UploadStart: %s\n", filename.c_str());
     
-    if (uploaded_count >= 13) {
-      Serial.println("Max files limit (13) reached!");
+    if (uploaded_count >= 50) {
+      Serial.println("Max files limit (50) reached!");
       return;
     }
 
@@ -216,7 +240,7 @@ void loop() {
   static int lastShow = 0;
   static int curImage = 0;
   
-  if(millis() - lastShow >= 5000) {
+  if(millis() - lastShow >= photo_delay) {
     lastShow = millis();
     
     if(uploaded_count == 0) {

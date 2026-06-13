@@ -1,4 +1,14 @@
-// Существующая функция load() для просмотра файлов из LittleFS
+document.addEventListener("DOMContentLoaded", function(){
+    checkSpace();
+    curDelay();
+});
+
+async function curDelay() {
+    const response = await fetch("/api/cur_delay");
+    const cur_delay = await response.text();
+    document.getElementById("curDelay").textContent = "Текущее время: " + cur_delay;
+}
+
 function load(input_element) {
     const file = input_element.files[0];
     if (!file) return;
@@ -9,7 +19,33 @@ function load(input_element) {
         canvas.width = 240;
         canvas.height = 320;
         const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0, 240, 320);
+        
+        const needsRotation = img.width > img.height;
+        
+        if (needsRotation) {
+            console.log("Preview: Image is landscape, rotating 90° clockwise...");
+            
+            ctx.translate(canvas.width, 0);
+            ctx.rotate(Math.PI / 2);
+            
+            const scale = Math.min(canvas.height / img.width, canvas.width / img.height);
+            const drawWidth = img.width * scale;
+            const drawHeight = img.height * scale;
+            
+            const offsetX = (canvas.height - drawWidth) / 2;
+            const offsetY = (canvas.width - drawHeight) / 2;
+            
+            ctx.drawImage(img, offsetX, offsetY, drawWidth, drawHeight);
+        } else {
+            const scale = Math.min(canvas.width / img.width, canvas.height / img.height);
+            const drawWidth = img.width * scale;
+            const drawHeight = img.height * scale;
+            
+            const offsetX = (canvas.width - drawWidth) / 2;
+            const offsetY = (canvas.height - drawHeight) / 2;
+            
+            ctx.drawImage(img, offsetX, offsetY, drawWidth, drawHeight);
+        }
         
         const mimeType = file.type === 'image/png' ? 'image/png' : 'image/jpeg';
         document.getElementById('preview').src = canvas.toDataURL(mimeType);
@@ -19,6 +55,7 @@ function load(input_element) {
 }
 
 async function deleteFile(index) {
+    await checkSpace();
     const responde = await fetch(`/api/files?index=${index}`, {
         method: "DELETE"
     });
@@ -26,6 +63,7 @@ async function deleteFile(index) {
 }
 
 async function listFS () {
+    await checkSpace();
     const response = await fetch("/api/files");
 
     if(!response.ok) {
@@ -66,6 +104,7 @@ async function listFS () {
 }
 
 async function uploadFile() {
+    await checkSpace();
     const input = document.getElementById("fileInput");
     const file = input.files[0];
 
@@ -83,7 +122,33 @@ async function uploadFile() {
             canvas.width = 240;
             canvas.height = 320;
             const ctx = canvas.getContext("2d");
-            ctx.drawImage(img, 0, 0, 240, 320);
+            
+            const needsRotation = img.width > img.height;
+            
+            if (needsRotation) {
+                console.log("Image is landscape, rotating 90° clockwise...");
+                
+                ctx.translate(canvas.width, 0);
+                ctx.rotate(Math.PI / 2);
+                
+                const scale = Math.min(canvas.height / img.width, canvas.width / img.height);
+                const drawWidth = img.width * scale;
+                const drawHeight = img.height * scale;
+                
+                const offsetX = (canvas.height - drawWidth) / 2;
+                const offsetY = (canvas.width - drawHeight) / 2;
+                
+                ctx.drawImage(img, offsetX, offsetY, drawWidth, drawHeight);
+            } else {
+                const scale = Math.min(canvas.width / img.width, canvas.height / img.height);
+                const drawWidth = img.width * scale;
+                const drawHeight = img.height * scale;
+                
+                const offsetX = (canvas.width - drawWidth) / 2;
+                const offsetY = (canvas.height - drawHeight) / 2;
+                
+                ctx.drawImage(img, offsetX, offsetY, drawWidth, drawHeight);
+            }
 
             canvas.toBlob((blob) => {
                 resolve(blob);
@@ -96,7 +161,6 @@ async function uploadFile() {
 
     // uploading
     const data = new FormData();
-
     data.append('image', resizedBlob, file.name);
 
     console.log("Uploading...");
@@ -106,4 +170,40 @@ async function uploadFile() {
     });
 
     console.log(response);
+}
+
+async function changeDelay() {
+    const data = new FormData();
+    const delay = document.getElementById("delayPicker").value;
+    data.append("delay", delay);
+
+    document.getElementById("curDelay").textContent = "Текущее время: " + delay;
+
+    const response = await fetch("/api/images/delay", {
+        method: "POST",
+        body: data
+    });
+}
+
+async function checkSpace() {
+    const response = await fetch("/api/space_used"); 
+    const textData = await response.text();
+
+    console.log(textData);
+
+    const spaceUsedBytes = parseInt(textData.trim(), 10);
+
+    if (isNaN(spaceUsedBytes)) {
+        throw new Error(`Сервер вернул не число: "${textData}"`);
+    }
+
+    const spaceInKb = (spaceUsedBytes / 1000).toFixed(1); 
+
+    // 5. Обновляем DOM
+    const el = document.getElementById("curSpace");
+    if (el) {
+        el.textContent = `${spaceInKb}/1442 kB`;
+    } else {
+        console.warn('Элемент с id "curSpace" не найден');
+    }
 }

@@ -16,7 +16,16 @@
     
     <hr>
     
+    <!-- Выбор времени между фото -->
+
+    <h2>Выбор времени между фото (в мс)</h2>
+    <h3 id="curDelay">Текущее время: </h3>
+    <input type="number" id="delayPicker" placeholder="Время между фото" onchange="changeDelay()">
+    
+    <hr>
+
     <!-- Просмотр -->
+    <h3 id="curSpace">/1442 kB</h3>
     <img id="preview" src="/cool.jpg" alt="Превью">
     
     <input type="button" value="Просмотреть файлы" onclick="listFS()">
